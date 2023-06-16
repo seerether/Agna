@@ -1,0 +1,25 @@
+function updateBucketExchangeRatesAndClaim(
+    address pool_,
+    bytes32 subsetHash_,
+    uint256[] calldata indexes_
+) external override returns (uint256 updateReward) {
+    // Validate Ajna Pool
+    if (!positionManager.isAjnaPool(pool_, subsetHash_)) {
+        revert NotAjnaPool();
+    }
+
+    // Validate Indexes
+    for (uint256 i = 0; i < indexes_.length; i++) {
+        if (!positionManager.isValidBucketIndex(pool_, indexes_[i])) {
+            revert InvalidBucketIndex();
+        }
+    }
+
+    updateReward = _updateBucketExchangeRates(pool_, indexes_);
+
+    // transfer bucket update rewards to sender even if there's not enough balance for the entire amount
+    _transferAjnaRewards({
+        transferAmount_: updateReward,
+        minAmount_: 0
+    });
+}
