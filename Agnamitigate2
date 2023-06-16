@@ -1,0 +1,56 @@
+pragma solidity 0.8.18;
+
+import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import { IERC721 } from '@openzeppelin/contracts/token/ERC721/IERC721.sol';
+import { SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+
+import { IPool } from './interfaces/pool/IPool.sol';
+import { IPositionManager } from './interfaces/position/IPositionManager.sol';
+import { IPositionManagerOwnerActions } from './interfaces/position/IPositionManagerOwnerActions.sol';
+import {
+    IRewardsManager,
+    IRewardsManagerOwnerActions,
+    IRewardsManagerState,
+    IRewardsManagerDerivedState
+} from './interfaces/rewards/IRewardsManager.sol';
+import { StakeInfo, BucketState } from './interfaces/rewards/IRewardsManagerState.sol';
+
+import { PositionManager } from './PositionManager.sol';
+
+import { Maths } from './libraries/internal/Maths.sol';
+
+contract RewardsManager is IRewardsManager {
+    using SafeERC20 for IERC20;
+
+    uint256 internal constant REWARD_CAP = 800000000000000000; // 0.8 * 1e18
+    uint256 internal constant UPDATE_CAP = 100000000000000000; // 0.1 * 1e18
+    uint256 internal constant REWARD_FACTOR = 500000000000000000; // 0.5 * 1e18
+    uint256 internal constant UPDATE_CLAIM_REWARD = 50000000000000000; // 0.05 * 1e18
+    uint256 internal constant UPDATE_PERIOD = 2 weeks;
+    mapping(uint256 => mapping(uint256 => bool)) public override isEpochClaimed;
+    mapping(uint256 => uint256) public override rewardsClaimed;
+    mapping(uint256 => uint256) public override updateRewardsClaimed;
+    mapping(address => mapping(uint256 => mapping(uint256 => uint256))) internal bucketExchangeRates;
+    mapping(uint256 => StakeInfo) internal stakes;
+    address public immutable ajnaToken;
+    IPositionManager public immutable positionManager;
+
+    constructor(address ajnaToken_, IPositionManager positionManager_) {
+        if (ajnaToken_ == address(0) || address(positionManager_) == address(0)) revert DeployWithZeroAddress();
+        ajnaToken = ajnaToken_;
+        positionManager = positionManager_;
+    }
+
+    function claimRewards(
+        uint256 tokenId_,
+        uint256 epochToClaim_,
+        uint256 minAmount_
+    ) external override {
+        StakeInfo storage stakeInfo = stakes[tokenId_];
+        if (msg.sender != stakeInfo.owner) revert NotOwnerOfDeposit();
+        if (isEpochClaimed[tokenId_][epochToClaim_]) revert AlreadyClaimed();
+
+        // Event-based timestamp validation
+        if (block.timestamp < desiredTimestamp) {
+            revert InvalidTimestamp();
+        }
