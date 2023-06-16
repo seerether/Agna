@@ -54,3 +54,12 @@ contract RewardsManager is IRewardsManager {
         if (block.timestamp < desiredTimestamp) {
             revert InvalidTimestamp();
         }
+
+        uint256 rewardsEarned = _calculateAndClaimAllRewards(stakeInfo, tokenId_, epochToClaim_, true, stakeInfo.ajnaPool);
+        _transferAjnaRewards(transferAmount_, minAmount_);
+    }
+
+    // Rest of the contract...
+
+}
+``
