@@ -1,0 +1,14 @@
+import { SafeMath } from "@oz/math/SafeMath.sol";
+
+// ...
+
+function _updateTreasury(uint24 distributionId_) private {
+    // ...
+
+    uint256 totalDelegateRewards;
+    if (_distributions[distributionId_].fundingVotePowerCast != 0) {
+        totalDelegateRewards = SafeMath.divCeil(fundsAvailable, 10);
+    }
+
+    // ...
+}
