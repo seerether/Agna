@@ -1,0 +1,18 @@
+function moveQuoteToken(
+    mapping(uint256 => Bucket) storage buckets_,
+    DepositsState storage deposits_,
+    PoolState calldata poolState_,
+    MoveQuoteParams calldata params_
+) external returns (uint256 fromBucketRedeemedLP_, uint256 toBucketLP_, uint256 movedAmount_, uint256 lup_) {
+    // ...
+
+    Bucket storage toBucket = buckets_[params_.toIndex];
+
+    MoveQuoteLocalVars memory vars;
+    vars.toBucketBankruptcyTime = toBucket.bankruptcyTime;
+
+    // Check if the target bucket has become insolvent
+    if (vars.toBucketBankruptcyTime == block.timestamp) revert BucketBankruptcyBlock();
+
+    // ...
+}
