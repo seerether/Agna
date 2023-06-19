@@ -1,18 +1,76 @@
-function moveQuoteToken(
+function addQuoteToken(
     mapping(uint256 => Bucket) storage buckets_,
     DepositsState storage deposits_,
     PoolState calldata poolState_,
-    MoveQuoteParams calldata params_
-) external returns (uint256 fromBucketRedeemedLP_, uint256 toBucketLP_, uint256 movedAmount_, uint256 lup_) {
-    // ...
+    AddQuoteParams calldata params_
+) external returns (uint256 bucketLP_, uint256 lup_) {
+    // revert if no amount to be added
+    if (params_.amount == 0) revert InvalidAmount();
+    // revert if adding to an invalid index
+    if (params_.index == 0 || params_.index > MAX_FENWICK_INDEX) revert InvalidIndex();
 
-    Bucket storage toBucket = buckets_[params_.toIndex];
+    Bucket storage bucket = buckets_[params_.index];
 
-    MoveQuoteLocalVars memory vars;
-    vars.toBucketBankruptcyTime = toBucket.bankruptcyTime;
+    uint256 bankruptcyTime = bucket.bankruptcyTime;
 
-    // Check if the target bucket has become insolvent
-    if (vars.toBucketBankruptcyTime == block.timestamp) revert BucketBankruptcyBlock();
+    // cannot deposit in the same block when bucket becomes insolvent
+    if (bankruptcyTime == block.timestamp) revert BucketBankruptcyBlock();
 
-    // ...
+    uint256 unscaledBucketDeposit = Deposits.unscaledValueAt(deposits_, params_.index);
+    uint256 bucketScale           = Deposits.scale(deposits_, params_.index);
+    uint256 bucketDeposit         = Maths.wmul(bucketScale, unscaledBucketDeposit);
+    uint256 bucketPrice           = _priceAt(params_.index);
+    uint256 addedAmount           = params_.amount;
+
+    // charge unutilized deposit fee where appropriate
+    uint256 lupIndex = Deposits.findIndexOfSum(deposits_, poolState_.debt);
+    bool depositBelowLup = lupIndex != 0 && params_.index > lupIndex;
+    if (depositBelowLup) {
+        addedAmount = Maths.wmul(addedAmount, Maths.WAD - _depositFeeRate(poolState_.rate));
+    }
+
+    bucketLP_ = Buckets.quoteTokensToLP(
+        bucket.collateral,
+        bucket.lps,
+        bucketDeposit,
+        addedAmount,
+        bucketPrice,
+        Math.Rounding.Down
+    );
+
+    // revert if (due to rounding) the awarded LP is 0
+    if (bucketLP_ == 0) revert InsufficientLP();
+
+    uint256 unscaledAmount = Maths.wdiv(addedAmount, bucketScale);
+    // revert if unscaled amount is 0
+    if (unscaledAmount == 0) revert InvalidAmount();
+
+    // check if the bucket becomes insolvent after the addition
+    uint256 newBucketLP = bucket.lps + bucketLP_;
+    if (newBucketLP < bucket.collateral) {
+        // bucket becomes insolvent, revert the transaction
+        revert InsufficientLiquidity();
+    }
+
+    Deposits.unscaledAdd(deposits_, params_.index, unscaledAmount);
+
+    // update lender LP
+    Buckets.addLenderLP(bucket, bankruptcyTime, msg.sender, bucketLP_);
+
+    // update bucket LP
+    bucket.lps += bucketLP_;
+
+    // only need to recalculate LUP if the deposit was above it
+    if (!depositBelowLup) {
+        lupIndex = Deposits.findIndexOfSum(deposits_, poolState_.debt);
+    }
+    lup_ = _priceAt(lupIndex);
+
+    emit AddQuoteToken(
+        msg.sender,
+        params_.index,
+        addedAmount,
+        bucketLP_,
+        lup_
+    );
 }
