@@ -1,0 +1,9 @@
+// Pull collateral from borrower if requested
+    if (vars.pull && collateralAmountToPull_ > borrower.collateral) {
+        revert InsufficientCollateral();
+    }
+
+    if (vars.pull) {
+        // Subtract the pulled collateral amount from the borrower's collateral balance
+        borrower.collateral -= collateralAmountToPull_;
+        }
